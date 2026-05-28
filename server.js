@@ -80,32 +80,39 @@ const DB = {
 };
 
 // ── BOT ─────────────────────────────────────
-const bot = new TG(CFG.BOT_TOKEN, { polling:true });
+let bot = null;
+try {
+  bot = new TG(CFG.BOT_TOKEN, { polling:true });
+  bot&&bot.on('polling_error', (e) => console.log('Bot xato:', e.message));
+  console.log('Bot ishga tushdi');
+} catch(e) {
+  console.log('Bot ulanmadi:', e.message);
+}
 
-bot.onText(/\/start(.*)/, (msg, match) => {
+bot&&bot.onText(/\/start(.*)/, (msg, match) => {
   const chatId=String(msg.chat.id), param=(match[1]||'').trim();
   if(param) {
     const u=DB.getUser('token',param);
     if(u){
       DB.updateUser(u.id,{tg_id:chatId,tg_connected:true});
-      bot.sendMessage(chatId,'*BekMedia — Ulandi!*\n\nSalom, *'+u.name+'*! Lidlar shu yerga keladi!',{parse_mode:'Markdown'});
-      bot.sendMessage(CFG.ADMIN_ID,'*'+u.name+'* botni uladi.',{parse_mode:'Markdown'}).catch(()=>{});
+      bot&&bot.sendMessage(chatId,'*BekMedia — Ulandi!*\n\nSalom, *'+u.name+'*! Lidlar shu yerga keladi!',{parse_mode:'Markdown'});
+      bot&&bot.sendMessage(CFG.ADMIN_ID,'*'+u.name+'* botni uladi.',{parse_mode:'Markdown'}).catch(()=>{});
       return;
     }
   }
-  bot.sendMessage(chatId,'*BekMedia Leads Platform*\n\nIltimos bolimni tanlang!',
+  bot&&bot.sendMessage(chatId,'*BekMedia Leads Platform*\n\nIltimos bolimni tanlang!',
     {parse_mode:'Markdown',reply_markup:{keyboard:[[{text:'Statistika'},{text:'Tariflar'}],[{text:'Sessiyalar'}]],resize_keyboard:true}});
 });
 
-bot.on('message', async (msg) => {
+bot&&bot.on('message', async (msg) => {
   const chatId=String(msg.chat.id),text=msg.text||'';
   const u=DB.getUser('tg_id',chatId);
   if(!u) return;
   if(text==='Statistika') {
     const s=DB.stats(u.id);
-    bot.sendMessage(chatId,'Statistika:\n\nBugun: '+s.today+'\nHafta: '+s.week+'\nOy: '+s.month+'\nJami: '+s.total,{parse_mode:'Markdown'});
+    bot&&bot.sendMessage(chatId,'Statistika:\n\nBugun: '+s.today+'\nHafta: '+s.week+'\nOy: '+s.month+'\nJami: '+s.total,{parse_mode:'Markdown'});
   } else if(text==='Tariflar') {
-    bot.sendMessage(chatId,'Tariflar:\nBepul: 1,000 lid\nProfessional: 49,000 som - 5,000 lid\nBiznes: 69,000 som - 10,000 lid\nKorporativ: 89,000 som - Cheksiz');
+    bot&&bot.sendMessage(chatId,'Tariflar:\nBepul: 1,000 lid\nProfessional: 49,000 som - 5,000 lid\nBiznes: 69,000 som - 10,000 lid\nKorporativ: 89,000 som - Cheksiz');
   }
 });
 
@@ -123,7 +130,7 @@ async function deliverLead(lead, integ, user) {
   try {
     if(integ.dest_type==='telegram') {
       const dest=integ.dest_group_id||user.tg_id;
-      if(dest){await bot.sendMessage(dest,msg,{parse_mode:'Markdown'});await bot.sendMessage(dest,'✅ *Telegram uchun tayyor*',{parse_mode:'Markdown'});ok=true;}
+      if(dest){await bot&&bot.sendMessage(dest,msg,{parse_mode:'Markdown'});await bot&&bot.sendMessage(dest,'✅ *Telegram uchun tayyor*',{parse_mode:'Markdown'});ok=true;}
       else err='Telegram ulanmagan';
     } else if(integ.dest_type==='sheets'&&integ.dest_sheets_url) {
       await axios.post(integ.dest_sheets_url,{name:lead.full_name,phone:lead.phone,region:lead.region,comment:lead.comment,date:now},{timeout:8000});
@@ -154,7 +161,7 @@ app.post('/api/auth/register', async (req,res)=>{
   const hash=await bcrypt.hash(password,10);
   const u=DB.addUser({name,phone,email:'',password:hash});
   const token=jwt.sign({uid:u.id},CFG.JWT_SECRET,{expiresIn:'30d'});
-  bot.sendMessage(CFG.ADMIN_ID,'Yangi royxatdan otish!\n'+name+'\n'+phone).catch(()=>{});
+  bot&&bot.sendMessage(CFG.ADMIN_ID,'Yangi royxatdan otish!\n'+name+'\n'+phone).catch(()=>{});
   res.json({ok:true,token,user:DB.safe(u)});
 });
 
@@ -166,7 +173,7 @@ app.post('/api/auth/login', async (req,res)=>{
   const token=jwt.sign({uid:u.id},CFG.JWT_SECRET,{expiresIn:'30d'});
   if(u.tg_id){
     const ip=req.headers['x-forwarded-for']||req.ip||'unknown';
-    bot.sendMessage(u.tg_id,'Hisobingizga kirish amalga oshirildi!\n\nIP: '+ip+'\nVaqt: '+new Date().toLocaleString('ru-RU')).catch(()=>{});
+    bot&&bot.sendMessage(u.tg_id,'Hisobingizga kirish amalga oshirildi!\n\nIP: '+ip+'\nVaqt: '+new Date().toLocaleString('ru-RU')).catch(()=>{});
   }
   res.json({ok:true,token,user:DB.safe(u)});
 });
@@ -324,7 +331,7 @@ app.post('/api/payme',(req,res)=>{
     DB.updateTxn(txn.id,{status:'paid',perform_time:Date.now()});
     const p=PLANS[txn.plan];
     if(p){const exp=new Date();exp.setMonth(exp.getMonth()+1);DB.updateUser(txn.user_id,{plan:txn.plan,plan_leads:p.leads,plan_used:0,plan_expires:exp.toISOString()});
-    const u=DB.getUser('id',txn.user_id);if(u?.tg_id)bot.sendMessage(u.tg_id,'Tolov qabul qilindi! Tarif: '+p.name).catch(()=>{});}
+    const u=DB.getUser('id',txn.user_id);if(u?.tg_id)bot&&bot.sendMessage(u.tg_id,'Tolov qabul qilindi! Tarif: '+p.name).catch(()=>{});}
     ok({transaction:String(txn.id),perform_time:Date.now(),state:2});
   } else if(method==='CancelTransaction'){
     const txn=DB.getTxn('payme_id',params.id);
@@ -355,7 +362,7 @@ app.post('/api/admin/broadcast',adminAuth,async(req,res)=>{
   const{message}=req.body;
   const users=DB.allUsers().filter(u=>u.tg_id&&u.status==='active');
   let sent=0;
-  for(const u of users){try{await bot.sendMessage(u.tg_id,message,{parse_mode:'Markdown'});sent++;}catch(e){}}
+  for(const u of users){try{await bot&&bot.sendMessage(u.tg_id,message,{parse_mode:'Markdown'});sent++;}catch(e){}}
   res.json({ok:true,sent});
 });
 
